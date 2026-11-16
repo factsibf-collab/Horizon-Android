@@ -32,10 +32,10 @@ pub struct CustomButton {
     
 }
 impl CustomButton {
-    pub fn new(key: String, index: usize) -> Self
-   macro_queue: VecDeque::new(),
+    pub fn new(key: String, index: usize) -> Self {
         Self {
             key,
+            macro_queue: VecDeque::new(),
             second_key: String::new(),
             third_key: String::new(),
             fourth_key: String::new(),
