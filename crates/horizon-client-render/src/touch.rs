@@ -1044,6 +1044,16 @@ impl TouchControls {
                 match button {
                     Button::LeftTrigger => self.pending.triggers[0] = 1.0,
                     Button::RightTrigger => self.pending.triggers[1] = 1.0,
+                                        Button::RightTrigger => self.pending.triggers[1] = 1.0,
+                    _ => {
+                        if let Some(custom) = self.settings.custom_buttons.get_mut(button) {
+                            if let Some(event) = custom.macro_queue.pop_front() {
+                                self.pending.set(event.key, event.pressed);
+                            }
+                        }
+                        self.pending.set(button, true);
+                    }
+
                     _ => self.pending.set(button, true),
                 }
             }
