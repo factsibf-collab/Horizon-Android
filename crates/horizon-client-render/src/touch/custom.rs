@@ -1,11 +1,24 @@
+use std::collections::VecDeque;
+
 //! User-added keys share drawing/hit geometry and retain per-finger ownership.
 use super::*;
 use layout::Placement;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MacroEvent {
+    pub key: String,
+    pub delay_ms: u64,
+    pub pressed: bool,
+}
+
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CustomButton {
     pub key: String,
     #[serde(default)]
+        pub macro_queue: VecDeque<MacroEvent>,
+
     pub second_key: String,
     #[serde(default)]
     pub third_key: String,
@@ -16,9 +29,11 @@ pub struct CustomButton {
     #[serde(default)]
     pub always_visible: bool,
     pub layouts: [Placement; 3],
+    
 }
 impl CustomButton {
-    pub fn new(key: String, index: usize) -> Self {
+    pub fn new(key: String, index: usize) -> Self
+   macro_queue: VecDeque::new(),
         Self {
             key,
             second_key: String::new(),
