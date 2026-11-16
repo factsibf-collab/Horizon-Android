@@ -47,7 +47,6 @@ impl CustomButton {
                 0.105,
             ); 3],
         }
-    }
     pub fn valid_token(token: &str) -> bool {
         token == "key.keyboard.unknown"
             || crate::keybinds::key_code(token).is_some()
