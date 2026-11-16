@@ -193,7 +193,7 @@ impl CustomButton {
         let parts: Vec<String> = tokens.iter().map(|t| friendly_token_name(t)).collect();
         parts.join("+")
     }
-}
+
 
 pub fn friendly_token_name(token: &str) -> String {
     match token {
