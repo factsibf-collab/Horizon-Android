@@ -1,11 +1,11 @@
+//! User-added keys share drawing/hit geometry and retain per-finger ownership.
+
 use std::collections::VecDeque;
 
 use serde::{Deserialize, Serialize};
 
 use super::*;
 use layout::Placement;
-
-//! User-added keys share drawing/hit geometry and retain per-finger ownership.
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MacroEvent {
@@ -112,8 +112,7 @@ impl CustomButton {
             }
 
             1 => {
-                if (self.key.is_empty()
-                    || self.key == "key.keyboard.unknown")
+                if (self.key.is_empty() || self.key == "key.keyboard.unknown")
                     && !token.is_empty()
                     && token != "key.keyboard.unknown"
                 {
@@ -124,8 +123,7 @@ impl CustomButton {
             }
 
             2 => {
-                if (self.key.is_empty()
-                    || self.key == "key.keyboard.unknown")
+                if (self.key.is_empty() || self.key == "key.keyboard.unknown")
                     && !token.is_empty()
                     && token != "key.keyboard.unknown"
                 {
@@ -136,8 +134,7 @@ impl CustomButton {
             }
 
             _ => {
-                if (self.key.is_empty()
-                    || self.key == "key.keyboard.unknown")
+                if (self.key.is_empty() || self.key == "key.keyboard.unknown")
                     && !token.is_empty()
                     && token != "key.keyboard.unknown"
                 {
@@ -196,7 +193,7 @@ impl CustomButton {
     }
 
     pub fn active_tokens(&self) -> Vec<String> {
-        let mut out = Vec::new();
+        let mut out: Vec<String> = Vec::new();
 
         for token in [
             &self.key,
@@ -279,14 +276,13 @@ pub fn friendly_token_name(token: &str) -> String {
                         "key.swapOffhand" => "Swap Hands (F)".into(),
                         "key.advancements" => "Advancements (L)".into(),
                         "key.debug.overlay" => "Debug Info (F3)".into(),
-                        other => other.trim_start_matches("key.").into(),
+                        other => other.trim_start_matches("key.").to_string(),
                     }
                 } else {
                     translated
                 }
             } else {
-                let display =
-                    crate::keybinds::display_name(token).plain();
+                let display = crate::keybinds::display_name(token).plain();
 
                 if display.starts_with("key.keyboard.") {
                     token
@@ -304,9 +300,7 @@ pub fn choices(raw_keys: bool) -> Vec<(String, String)> {
     if raw_keys {
         crate::keybinds::available_keys()
             .iter()
-            .map(|(name, _)| {
-                ((*name).into(), friendly_token_name(name))
-            })
+            .map(|(name, _)| ((*name).to_string(), friendly_token_name(name)))
             .collect()
     } else {
         crate::keybinds::MAPPINGS
@@ -322,9 +316,7 @@ pub fn choices(raw_keys: bool) -> Vec<(String, String)> {
 }
 
 impl TouchControls {
-    pub(super) fn inventory_token(
-        control: Control,
-    ) -> Option<&'static str> {
+    pub(super) fn inventory_token(control: Control) -> Option<&'static str> {
         match control {
             Control::Sneak => Some("key.keyboard.left.shift"),
             Control::Attack => Some("action:key.attack"),
@@ -344,9 +336,7 @@ impl TouchControls {
             && !ended
             && self
                 .custom_at(point)
-                .is_some_and(|index| {
-                    self.custom_placement(index).swipeable
-                });
+                .is_some_and(|index| self.custom_placement(index).swipeable);
 
         if self.custom_fingers.contains_key(&id)
             || self.custom_swipe_btn.contains_key(&id)
@@ -356,24 +346,24 @@ impl TouchControls {
             return self.custom_update(id, point, started, ended);
         }
 
-        if started
-            && self.custom_at(point).is_none()
-            && let Some(token) =
+        if started && self.custom_at(point).is_none() {
+            if let Some(token) =
                 self.control_at(point).and_then(Self::inventory_token)
-        {
-            let already_held = self
-                .custom_fingers
-                .values()
-                .any(|tokens| tokens.iter().any(|value| value == token));
+            {
+                let already_held = self
+                    .custom_fingers
+                    .values()
+                    .any(|tokens| tokens.iter().any(|value| value == token));
 
-            self.custom_fingers.insert(id, vec![token.into()]);
-            self.fingers.insert(id, (Role::Ignore, point));
+                self.custom_fingers.insert(id, vec![token.to_string()]);
+                self.fingers.insert(id, (Role::Ignore, point));
 
-            if !already_held {
-                self.custom_events.push((token.into(), true));
+                if !already_held {
+                    self.custom_events.push((token.to_string(), true));
+                }
+
+                return true;
             }
-
-            return true;
         }
 
         false
@@ -391,9 +381,7 @@ impl TouchControls {
             && !ended
             && self
                 .custom_at(point)
-                .is_some_and(|index| {
-                    self.custom_placement(index).swipeable
-                });
+                .is_some_and(|index| self.custom_placement(index).swipeable);
 
         if self.custom_fingers.contains_key(&id)
             || self.custom_swipe_btn.contains_key(&id)
@@ -425,14 +413,11 @@ impl TouchControls {
     }
 
     pub fn custom_placement(&self, index: usize) -> Placement {
-        let Some(button) =
-            self.settings.custom_buttons.get(index)
-        else {
+        let Some(button) = self.settings.custom_buttons.get(index) else {
             return Placement::new(0.5, 0.5, 0.105);
         };
 
-        let mut placement =
-            button.layouts[self.settings.mode.index()];
+        let mut placement = button.layouts[self.settings.mode.index()];
 
         if self.settings.left_handed {
             placement.center[0] = 1.0 - placement.center[0];
@@ -441,22 +426,16 @@ impl TouchControls {
         self.fit_placement(placement)
     }
 
-    pub fn custom_visible_for_state(
-        &self,
-        index: usize,
-        in_menu: bool,
-    ) -> bool {
-        let Some(button) =
-            self.settings.custom_buttons.get(index)
-        else {
+    pub fn custom_visible_for_state(&self, index: usize, in_menu: bool) -> bool {
+        let Some(button) = self.settings.custom_buttons.get(index) else {
             return false;
         };
 
         let placement = self.custom_placement(index);
 
-        let is_goy =
-            self.settings.control_style == layout::ControlStyle::GoyControl
-                || placement.use_goy_style;
+        let is_goy = self.settings.control_style
+            == layout::ControlStyle::GoyControl
+            || placement.use_goy_style;
 
         if placement.opacity <= 0.0 && !is_goy {
             return false;
@@ -483,8 +462,7 @@ impl TouchControls {
             .find(|&index| {
                 self.custom_visible_for_state(index, self.in_menu)
                     && layout::contains(
-                        self.custom_placement(index)
-                            .rect(self.aspect()),
+                        self.custom_placement(index).rect(self.aspect()),
                         point,
                     )
             })
@@ -518,13 +496,10 @@ impl TouchControls {
         point: [f32; 2],
         is_swipe: bool,
     ) -> bool {
-        let Some(button) =
-            self.settings.custom_buttons.get(index)
-        else {
-            return false;
+        let active = match self.settings.custom_buttons.get(index) {
+            Some(button) => button.active_tokens(),
+            None => return false,
         };
-
-        let active = button.active_tokens();
 
         if active.is_empty() {
             return false;
@@ -544,36 +519,33 @@ impl TouchControls {
 
             let now_on = !all_latched;
 
-            for token in active {
+            for token in &active {
                 if now_on {
                     if self.latched_custom.insert(token.clone()) {
                         let already_held = self
                             .custom_fingers
                             .values()
-                            .any(|other| other.contains(&token));
+                            .any(|other| other.contains(token));
 
                         if !already_held {
-                            self.custom_events.push((token, true));
+                            self.custom_events.push((token.clone(), true));
                         }
                     }
-                } else if self.latched_custom.remove(&token) {
+                } else if self.latched_custom.remove(token) {
                     let held_by_finger = self
                         .custom_fingers
                         .values()
-                        .any(|other| other.contains(&token));
+                        .any(|other| other.contains(token));
 
                     if !held_by_finger {
-                        self.custom_events.push((token, false));
+                        self.custom_events.push((token.clone(), false));
                     }
                 }
             }
 
             if !placement.passthrough || self.in_menu {
                 if !is_swipe || !self.fingers.contains_key(&id) {
-                    self.fingers.insert(
-                        id,
-                        (Role::Ignore, point),
-                    );
+                    self.fingers.insert(id, (Role::Ignore, point));
                 }
 
                 return true;
@@ -601,16 +573,15 @@ impl TouchControls {
 
         self.custom_fingers.insert(id, new_tokens);
 
+        let is_look = self
+            .fingers
+            .get(&id)
+            .is_some_and(|(role, _)| matches!(role, Role::Look { .. }));
+
         if placement.passthrough && !self.in_menu {
             self.passthrough_fingers.insert(id);
 
-            if !self
-                .fingers
-                .get(&id)
-                .is_some_and(|(role, _)| {
-                    matches!(role, Role::Look { .. })
-                })
-            {
+            if !is_look {
                 self.fingers.insert(
                     id,
                     (
@@ -625,17 +596,8 @@ impl TouchControls {
                     ),
                 );
             }
-        } else if !self
-            .fingers
-            .get(&id)
-            .is_some_and(|(role, _)| {
-                matches!(role, Role::Look { .. })
-            })
-        {
-            self.fingers.insert(
-                id,
-                (Role::Ignore, point),
-            );
+        } else if !is_look {
+            self.fingers.insert(id, (Role::Ignore, point));
         }
 
         true
@@ -651,8 +613,7 @@ impl TouchControls {
         if ended {
             self.custom_last_pos.remove(&id);
 
-            let had_swipe =
-                self.custom_swipe_btn.remove(&id).is_some();
+            let had_swipe = self.custom_swipe_btn.remove(&id).is_some();
 
             if self.custom_fingers.contains_key(&id) {
                 self.release_custom_finger_key(id);
@@ -672,25 +633,17 @@ impl TouchControls {
             self.custom_last_pos.insert(id, point);
 
             if let Some(index) = self.custom_at(point) {
-                return self.activate_custom_button_at(
-                    id,
-                    index,
-                    point,
-                    false,
-                );
+                return self.activate_custom_button_at(id, index, point, false);
             }
 
             return false;
         }
 
-        let previous =
-            self.custom_last_pos.insert(id, point).unwrap_or(point);
+        let previous = self.custom_last_pos.insert(id, point).unwrap_or(point);
 
-        let distance = (point[0] - previous[0])
-            .hypot(point[1] - previous[1]);
+        let distance = (point[0] - previous[0]).hypot(point[1] - previous[1]);
 
-        let steps = ((distance / 0.015).ceil() as usize)
-            .clamp(1, 12);
+        let steps = ((distance / 0.015).ceil() as usize).clamp(1, 12);
 
         let mut swiped_any = false;
 
@@ -698,49 +651,40 @@ impl TouchControls {
             let fraction = step as f32 / steps as f32;
 
             let sample = [
-                previous[0]
-                    + (point[0] - previous[0]) * fraction,
-                previous[1]
-                    + (point[1] - previous[1]) * fraction,
+                previous[0] + (point[0] - previous[0]) * fraction,
+                previous[1] + (point[1] - previous[1]) * fraction,
             ];
 
             let hit = self.custom_at(sample);
-            let previous_button =
-                self.custom_swipe_btn.get(&id).copied();
+            let previous_button = self.custom_swipe_btn.get(&id).copied();
 
-            if let Some(old_index) = previous_button
-                && hit != Some(old_index)
-            {
-                let old_swipeable =
-                    self.custom_placement(old_index).swipeable;
+            if let Some(old_index) = previous_button {
+                if hit != Some(old_index) {
+                    let old_swipeable = self.custom_placement(old_index).swipeable;
 
-                let new_swipeable = hit.is_some_and(|index| {
-                    self.custom_placement(index).swipeable
-                });
+                    let new_swipeable = hit
+                        .is_some_and(|index| self.custom_placement(index).swipeable);
 
-                if old_swipeable || new_swipeable {
-                    self.release_custom_finger_key(id);
-                    self.custom_swipe_btn.remove(&id);
-                    swiped_any = true;
+                    if old_swipeable || new_swipeable {
+                        self.release_custom_finger_key(id);
+                        self.custom_swipe_btn.remove(&id);
+                        swiped_any = true;
+                    }
                 }
             }
 
-            if let Some(index) = hit
-                && self.custom_placement(index).swipeable
-                && self.custom_swipe_btn.get(&id) != Some(&index)
-            {
-                if self.custom_fingers.contains_key(&id) {
-                    self.release_custom_finger_key(id);
+            if let Some(index) = hit {
+                if self.custom_placement(index).swipeable
+                    && self.custom_swipe_btn.get(&id) != Some(&index)
+                {
+                    if self.custom_fingers.contains_key(&id) {
+                        self.release_custom_finger_key(id);
+                    }
+
+                    let _ = self.activate_custom_button_at(id, index, sample, true);
+
+                    swiped_any = true;
                 }
-
-                let _ = self.activate_custom_button_at(
-                    id,
-                    index,
-                    sample,
-                    true,
-                );
-
-                swiped_any = true;
             }
         }
 
@@ -749,9 +693,7 @@ impl TouchControls {
                 && self
                     .fingers
                     .get(&id)
-                    .is_some_and(|(role, _)| {
-                        matches!(role, Role::Look { .. })
-                    })
+                    .is_some_and(|(role, _)| matches!(role, Role::Look { .. }))
             {
                 return false;
             }
@@ -762,9 +704,7 @@ impl TouchControls {
         false
     }
 
-    pub fn held_custom_tokens(
-        &self,
-    ) -> impl Iterator<Item = &str> {
+    pub fn held_custom_tokens(&self) -> impl Iterator<Item = &str> {
         self.custom_fingers
             .values()
             .flat_map(|tokens| tokens.iter())
@@ -779,9 +719,7 @@ impl TouchControls {
     }
 
     pub fn custom_button_toggled(&self, index: usize) -> bool {
-        let Some(button) =
-            self.settings.custom_buttons.get(index)
-        else {
+        let Some(button) = self.settings.custom_buttons.get(index) else {
             return false;
         };
 
@@ -812,20 +750,13 @@ impl TouchControls {
                 .flatten()
                 .collect();
 
-        all_tokens.extend(
-            std::mem::take(&mut self.latched_custom),
-        );
+        all_tokens.extend(std::mem::take(&mut self.latched_custom));
 
-        self.custom_events.extend(
-            all_tokens.into_iter().map(|key| (key, false)),
-        );
+        self.custom_events
+            .extend(all_tokens.into_iter().map(|key| (key, false)));
     }
 
-    pub(super) fn draw_custom(
-        &self,
-        batch: &mut HudBatch,
-        atlas: &HudAtlas,
-    ) {
+    pub(super) fn draw_custom(&self, batch: &mut HudBatch, atlas: &HudAtlas) {
         let hud_scale = if self.editor.is_some() {
             1.0
         } else {
@@ -836,9 +767,7 @@ impl TouchControls {
             return;
         }
 
-        for (index, button) in
-            self.settings.custom_buttons.iter().enumerate()
-        {
+        for (index, button) in self.settings.custom_buttons.iter().enumerate() {
             if self.editor.is_none()
                 && !self.custom_visible_for_state(index, self.in_menu)
             {
@@ -847,20 +776,15 @@ impl TouchControls {
 
             let placement = self.custom_placement(index);
 
-            let is_goy =
-                self.settings.control_style
-                    == layout::ControlStyle::GoyControl
-                    || placement.use_goy_style;
+            let is_goy = self.settings.control_style
+                == layout::ControlStyle::GoyControl
+                || placement.use_goy_style;
 
-            if is_goy
-                && self.goy_rendered_by_ui
-                && self.editor.is_none()
-            {
+            if is_goy && self.goy_rendered_by_ui && self.editor.is_none() {
                 continue;
             }
 
-            let [nx, ny, nw, nh] =
-                placement.rect(self.aspect());
+            let [nx, ny, nw, nh] = placement.rect(self.aspect());
 
             let rect = [
                 nx * batch.width,
@@ -879,8 +803,7 @@ impl TouchControls {
                 placement.opacity
             };
 
-            let opacity =
-                (base_opacity * hud_scale).clamp(0.0, 1.0);
+            let opacity = (base_opacity * hud_scale).clamp(0.0, 1.0);
 
             if opacity <= 0.001 {
                 continue;
@@ -904,12 +827,7 @@ impl TouchControls {
                     rect,
                     &button.label(),
                     pressed,
-                    rgba(
-                        255,
-                        255,
-                        255,
-                        (opacity * 255.0).round() as u8,
-                    ),
+                    rgba(255, 255, 255, (opacity * 255.0).round() as u8),
                     true,
                 );
             }
@@ -926,12 +844,10 @@ mod tests {
         let mut touch = TouchControls::default();
         touch.viewport(1920, 1080);
 
-        touch.settings.custom_buttons.push(
-            CustomButton::new(
-                "key.keyboard.unknown".into(),
-                0,
-            ),
-        );
+        touch
+            .settings
+            .custom_buttons
+            .push(CustomButton::new("key.keyboard.unknown".into(), 0));
 
         let point = touch.custom_placement(0).center;
 
@@ -945,18 +861,10 @@ mod tests {
         let mut touch = TouchControls::default();
         touch.viewport(1920, 1080);
 
-        let mut button =
-            CustomButton::new("key.keyboard.z".into(), 0);
+        let mut button = CustomButton::new("key.keyboard.z".into(), 0);
 
-        button.set_event_slot(
-            1,
-            "key.keyboard.x".into(),
-        );
-
-        button.set_event_slot(
-            2,
-            "key.mouse.left".into(),
-        );
+        button.set_event_slot(1, "key.keyboard.x".into());
+        button.set_event_slot(2, "key.mouse.left".into());
 
         touch.settings.custom_buttons.push(button);
 
@@ -975,8 +883,7 @@ mod tests {
 
     #[test]
     fn custom_button_label_works() {
-        let mut button =
-            CustomButton::new("key.keyboard.z".into(), 0);
+        let mut button = CustomButton::new("key.keyboard.z".into(), 0);
 
         assert_eq!(button.label(), "Z");
 
@@ -990,12 +897,10 @@ mod tests {
         let mut touch = TouchControls::default();
         touch.viewport(1920, 1080);
 
-        touch.settings.custom_buttons.push(
-            CustomButton::new(
-                "key.keyboard.z".into(),
-                0,
-            ),
-        );
+        touch
+            .settings
+            .custom_buttons
+            .push(CustomButton::new("key.keyboard.z".into(), 0));
 
         let point = touch.custom_placement(0).center;
 
@@ -1004,7 +909,7 @@ mod tests {
 
         assert_eq!(
             touch.key_events(),
-            [("key.keyboard.z".into(), true)]
+            vec![("key.keyboard.z".to_string(), true)]
         );
 
         touch.update(1, [0.99, 0.1], false, false);
@@ -1016,7 +921,7 @@ mod tests {
 
         assert_eq!(
             touch.key_events(),
-            [("key.keyboard.z".into(), false)]
+            vec![("key.keyboard.z".to_string(), false)]
         );
     }
-                        }
+}
