@@ -7,6 +7,19 @@ use serde::{Deserialize, Serialize};
 use super::*;
 use layout::Placement;
 
+/// Default gap between the keys of one button: 1st key at 0 ms,
+/// 2nd at 25 ms, 3rd at 50 ms, 4th at 75 ms.
+pub const DEFAULT_KEY_DELAY_MS: u64 = 25;
+
+/// If the finger is lifted before a delayed key was pressed, the key is still
+/// tapped and released this many ms after its press.
+const MIN_HOLD_MS: u64 = 30;
+
+fn default_key_delay_ms() -> u64 {
+    DEFAULT_KEY_DELAY_MS
+}
+
+/// A scheduled key event. `delay_ms` is the time since the button was pressed.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MacroEvent {
     pub key: String,
@@ -18,8 +31,13 @@ pub struct MacroEvent {
 pub struct CustomButton {
     pub key: String,
 
+    /// Events waiting for their delay to pass (runtime queue).
     #[serde(default)]
     pub macro_queue: VecDeque<MacroEvent>,
+
+    /// When the current queue started counting (runtime only).
+    #[serde(skip)]
+    pub macro_started: Option<Instant>,
 
     pub second_key: String,
 
@@ -28,6 +46,10 @@ pub struct CustomButton {
 
     #[serde(default)]
     pub fourth_key: String,
+
+    /// Delay between each key of this button, in milliseconds. 0 = all at once.
+    #[serde(default = "default_key_delay_ms")]
+    pub key_delay_ms: u64,
 
     #[serde(default)]
     pub custom_label: String,
@@ -43,9 +65,11 @@ impl CustomButton {
         Self {
             key,
             macro_queue: VecDeque::new(),
+            macro_started: None,
             second_key: String::new(),
             third_key: String::new(),
             fourth_key: String::new(),
+            key_delay_ms: DEFAULT_KEY_DELAY_MS,
             custom_label: String::new(),
             always_visible: false,
             layouts: [Placement::new(
@@ -468,9 +492,104 @@ impl TouchControls {
             })
     }
 
+    // ----------------------------------------------------------------
+    // Key delay (macro queue)
+    // ----------------------------------------------------------------
+
+    /// Milliseconds since this button's queue started counting.
+    fn macro_elapsed_ms(&self, index: usize) -> u64 {
+        self.settings
+            .custom_buttons
+            .get(index)
+            .and_then(|button| button.macro_started)
+            .map(|start| start.elapsed().as_millis() as u64)
+            .unwrap_or(0)
+    }
+
+    /// Queues a key event to fire `delay_ms` from now.
+    fn schedule_macro_event(
+        &mut self,
+        index: usize,
+        key: String,
+        delay_ms: u64,
+        pressed: bool,
+    ) {
+        let Some(button) = self.settings.custom_buttons.get_mut(index) else {
+            self.custom_events.push((key, pressed));
+            return;
+        };
+
+        let base = if button.macro_queue.is_empty() {
+            button.macro_started = Some(Instant::now());
+            0
+        } else {
+            button
+                .macro_started
+                .map(|start| start.elapsed().as_millis() as u64)
+                .unwrap_or(0)
+        };
+
+        button.macro_queue.push_back(MacroEvent {
+            key,
+            delay_ms: base + delay_ms,
+            pressed,
+        });
+    }
+
+    /// Delay of a press that is still waiting in the queue, if any.
+    fn pending_press_delay(&self, index: usize, token: &str) -> Option<u64> {
+        self.settings
+            .custom_buttons
+            .get(index)?
+            .macro_queue
+            .iter()
+            .find(|event| event.pressed && event.key == token)
+            .map(|event| event.delay_ms)
+    }
+
+    /// Moves every queued event whose delay has passed into `custom_events`.
+    fn flush_due_macros(&mut self) {
+        let mut ready: Vec<(String, bool)> = Vec::new();
+
+        for button in self.settings.custom_buttons.iter_mut() {
+            if button.macro_queue.is_empty() {
+                button.macro_started = None;
+                continue;
+            }
+
+            let elapsed = button
+                .macro_started
+                .map(|start| start.elapsed().as_millis() as u64)
+                .unwrap_or(u64::MAX);
+
+            let mut due: Vec<MacroEvent> = Vec::new();
+            let mut keep: VecDeque<MacroEvent> = VecDeque::new();
+
+            for event in std::mem::take(&mut button.macro_queue) {
+                if event.delay_ms <= elapsed {
+                    due.push(event);
+                } else {
+                    keep.push_back(event);
+                }
+            }
+
+            due.sort_by_key(|event| event.delay_ms);
+
+            button.macro_queue = keep;
+
+            if button.macro_queue.is_empty() {
+                button.macro_started = None;
+            }
+
+            ready.extend(due.into_iter().map(|event| (event.key, event.pressed)));
+        }
+
+        self.custom_events.extend(ready);
+    }
+
     fn release_custom_finger_key(&mut self, id: u64) {
         self.passthrough_fingers.remove(&id);
-        self.custom_swipe_btn.remove(&id);
+        let button_index = self.custom_swipe_btn.remove(&id);
 
         let Some(tokens) = self.custom_fingers.remove(&id) else {
             return;
@@ -483,7 +602,22 @@ impl TouchControls {
                 .any(|other| other.contains(&token))
                 || self.latched_custom.contains(&token);
 
-            if !still_held {
+            if still_held {
+                continue;
+            }
+
+            // If this key's delayed press has not fired yet, keep the press
+            // and queue its release just after it, so quick taps still work.
+            let pending = button_index.and_then(|index| {
+                self.pending_press_delay(index, &token)
+                    .map(|press_delay| (index, press_delay))
+            });
+
+            if let Some((index, press_delay)) = pending {
+                let elapsed = self.macro_elapsed_ms(index);
+                let wait = press_delay.saturating_sub(elapsed) + MIN_HOLD_MS;
+                self.schedule_macro_event(index, token, wait, false);
+            } else {
                 self.custom_events.push((token, false));
             }
         }
@@ -496,8 +630,8 @@ impl TouchControls {
         point: [f32; 2],
         is_swipe: bool,
     ) -> bool {
-        let active = match self.settings.custom_buttons.get(index) {
-            Some(button) => button.active_tokens(),
+        let (active, step) = match self.settings.custom_buttons.get(index) {
+            Some(button) => (button.active_tokens(), button.key_delay_ms),
             None => return false,
         };
 
@@ -557,7 +691,7 @@ impl TouchControls {
 
         let mut new_tokens = Vec::with_capacity(active.len());
 
-        for token in &active {
+        for (slot, token) in active.iter().enumerate() {
             let already_held = self
                 .custom_fingers
                 .values()
@@ -565,7 +699,14 @@ impl TouchControls {
                 || self.latched_custom.contains(token);
 
             if !already_held {
-                self.custom_events.push((token.clone(), true));
+                // 1st key: 0 ms, 2nd: step, 3rd: 2*step, 4th: 3*step
+                let delay = slot as u64 * step;
+
+                if delay == 0 {
+                    self.custom_events.push((token.clone(), true));
+                } else {
+                    self.schedule_macro_event(index, token.clone(), delay, true);
+                }
             }
 
             new_tokens.push(token.clone());
@@ -613,7 +754,7 @@ impl TouchControls {
         if ended {
             self.custom_last_pos.remove(&id);
 
-            let had_swipe = self.custom_swipe_btn.remove(&id).is_some();
+            let had_swipe = self.custom_swipe_btn.contains_key(&id);
 
             if self.custom_fingers.contains_key(&id) {
                 self.release_custom_finger_key(id);
@@ -622,6 +763,7 @@ impl TouchControls {
             }
 
             if had_swipe {
+                self.custom_swipe_btn.remove(&id);
                 self.fingers.remove(&id);
                 return true;
             }
@@ -731,11 +873,18 @@ impl TouchControls {
                 .all(|token| self.latched_custom.contains(token))
     }
 
+    /// True while events are ready or still waiting for their delay.
     pub fn has_pending_key_events(&self) -> bool {
         !self.custom_events.is_empty()
+            || self
+                .settings
+                .custom_buttons
+                .iter()
+                .any(|button| !button.macro_queue.is_empty())
     }
 
     pub fn key_events(&mut self) -> Vec<(String, bool)> {
+        self.flush_due_macros();
         std::mem::take(&mut self.custom_events)
     }
 
@@ -743,6 +892,11 @@ impl TouchControls {
         self.custom_last_pos.clear();
         self.custom_swipe_btn.clear();
         self.passthrough_fingers.clear();
+
+        for button in self.settings.custom_buttons.iter_mut() {
+            button.macro_queue.clear();
+            button.macro_started = None;
+        }
 
         let mut all_tokens: std::collections::BTreeSet<String> =
             std::mem::take(&mut self.custom_fingers)
@@ -863,6 +1017,9 @@ mod tests {
 
         let mut button = CustomButton::new("key.keyboard.z".into(), 0);
 
+        // No delay: all keys fire at once.
+        button.key_delay_ms = 0;
+
         button.set_event_slot(1, "key.keyboard.x".into());
         button.set_event_slot(2, "key.mouse.left".into());
 
@@ -879,6 +1036,43 @@ mod tests {
         let released = touch.key_events();
 
         assert_eq!(released.len(), 3);
+    }
+
+    #[test]
+    fn custom_button_staggers_keys_by_delay() {
+        let mut touch = TouchControls::default();
+        touch.viewport(1920, 1080);
+
+        let mut button = CustomButton::new("key.keyboard.z".into(), 0);
+
+        button.key_delay_ms = 20;
+        button.set_event_slot(1, "key.keyboard.x".into());
+        button.set_event_slot(2, "key.keyboard.c".into());
+
+        touch.settings.custom_buttons.push(button);
+
+        let point = touch.custom_placement(0).center;
+
+        touch.update(1, point, true, false);
+
+        // Only the first key fires immediately.
+        assert_eq!(
+            touch.key_events(),
+            vec![("key.keyboard.z".to_string(), true)]
+        );
+        assert!(touch.has_pending_key_events());
+
+        std::thread::sleep(std::time::Duration::from_millis(120));
+
+        // The other two follow in order.
+        assert_eq!(
+            touch.key_events(),
+            vec![
+                ("key.keyboard.x".to_string(), true),
+                ("key.keyboard.c".to_string(), true),
+            ]
+        );
+        assert!(!touch.has_pending_key_events());
     }
 
     #[test]
